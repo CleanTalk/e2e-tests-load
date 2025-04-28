@@ -11,14 +11,15 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-
+from concurrent.futures import ThreadPoolExecutor
 
 # Options
-br_headless = 'no' # or yes (no - normal browser, yes - in headless mode)
-browser_JS = 'yes' # or no (yes - JS enabled, no - JS disabled)
+br_headless = False # or True (False - normal browser, True - in headless mode)
+browser_JS = True # or False (True - JS enabled, False - JS disabled)
+num_requests = 5 # Number of requests to send
 
-site_url = 'https://site.loc'
-site_url_comments = 'https://site.loc/hello'
+site_url = 'https://osp6-wp652.local'
+site_url_comments = 'https://osp6-wp652.local/hello'
 
 # Tools ===========================================================================================================
 
@@ -47,34 +48,10 @@ options.set_preference("dom.webdriver.enabled", False)
 options.set_preference("useAutomationExtension", False)
 options.add_argument('-private') # open in incognito mode
 
-if br_headless == 'yes':
+if br_headless == True:
     options.headless = True
-if browser_JS == 'no':
+if browser_JS == False:
     options.set_preference("javascript.enabled", False)
-driver = webdriver.Firefox(options=options)
-
-
-if br_headless == 'yes':
-    driver.set_window_size(2560, 1600) # для headless там делее все равно full screen
-else:
-    # Calculate 80% of screen size
-    import tkinter as tk
-    root = tk.Tk()
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    root.destroy()
-    
-    width = int(screen_width * 0.9)
-    height = int(screen_height * 0.9)
-    
-    # Position window at center of screen
-    x_position = int((screen_width - width) / 2)
-    y_position = int((screen_height - height) / 2)
-    
-    driver.set_window_size(width, height)
-    driver.set_window_position(x_position, y_position)
-    
-    print(f"Window set to {width}x{height} (90% of screen size)")
 # Settings browser END ===============================================================================================
 
 
@@ -113,47 +90,74 @@ def fill_comments_form():
 
 
 def worker():
-        # Open the site
+    driver = webdriver.Firefox(options=options)
+
+    try:
         driver.get(site_url)
         print(f"Opened site: {site_url}")
-        
-        # Wait for page to load
+
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "a"))
         )
-        
-        # Get fresh list of links and click a random one
+
         links = WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "a"))
         )
         if links:
             try:
-                    random_page = random.choice(links)
-                    href = random_page.get_attribute('href')
-                    print(f"Attempting to open: {href}")
-                    random_page.click()
-                    
-                    # Wait for new page to load
-                    WebDriverWait(driver, 10).until(
-                        lambda driver: driver.execute_script('return document.readyState') == 'complete'
-                    )
+                random_page = random.choice(links)
+                href = random_page.get_attribute('href')
+                print(f"Attempting to open: {href}")
+                random_page.click()
+
+                WebDriverWait(driver, 10).until(
+                    lambda driver: driver.execute_script('return document.readyState') == 'complete'
+                )
             except Exception as e:
                 print(f"Error clicking link: {str(e)}")
 
-        # go to page with comments form
-        fill_comments_form()
+        driver.get(site_url_comments)
+        print(f"Opened comments form: {site_url_comments}")
+
+        WebDriverWait(driver, 10).until(
+            lambda driver: driver.execute_script('return document.readyState') == 'complete'
+        )
+
+        comment_textarea = driver.find_element(By.ID, "comment")
+        comment_textarea.send_keys("Hello, world! " + random_string(10))
+        name_input = driver.find_element(By.ID, "author")
+        name_input.send_keys("John Doe")
+        email_input = driver.find_element(By.ID, "email")
+        email_input.send_keys("john.doe@example.com")
+        submit_button = driver.find_element(By.ID, "submit")
+        submit_button.click()
+
+        WebDriverWait(driver, 10).until(
+            lambda driver: driver.execute_script('return document.readyState') == 'complete'
+        )
+        time.sleep(2)
+
+        print("Form submitted")
+
+    except Exception as e:
+        print(f"Error in worker: {str(e)}")
+    finally:
+        driver.quit()
 
 def work():
-    try:
-        for i in range(10):
+    def worker_wrapper():
+        try:
             worker()
-            time.sleep(5)
-        
-        driver.quit()
+        except Exception as e:
+            print(f"Error in worker: {str(e)}")
+
+    try:
+        with ThreadPoolExecutor(max_workers=num_requests) as executor:
+            futures = [executor.submit(worker_wrapper) for _ in range(num_requests)]
+            for future in futures:
+                future.result()  # Wait for all workers to complete
     except Exception as e:
-        print(f"Error opening site: {str(e)}")
-        driver.quit()
-        return 
+        print(f"Error in parallel execution: {str(e)}")
 
 
 if __name__ == "__main__":
