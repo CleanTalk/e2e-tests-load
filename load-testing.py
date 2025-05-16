@@ -16,10 +16,10 @@ from concurrent.futures import ThreadPoolExecutor
 # Options
 br_headless = False # or True (False - normal browser, True - in headless mode)
 browser_JS = True # or False (True - JS enabled, False - JS disabled)
-num_requests = 5 # Number of requests to send
+num_requests = 10 # Number of requests to send
 
-site_url = 'https://osp6-wp652.local'
-site_url_comments = 'https://osp6-wp652.local/hello'
+site_url = 'https://wordpress.demo6.cleantalk.me/'
+site_url_comments = site_url + 'hello-world'
 
 # Tools ===========================================================================================================
 
